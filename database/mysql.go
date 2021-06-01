@@ -13,7 +13,7 @@ import (
 var Db *sql.DB
 
 func InitDb() {
-	db, err := sql.Open("mysql", "mateuszkowalke'Kowalkem2@'@tcp(localhost)/hackernews")
+	db, err := sql.Open("mysql", "mateuszkowalke:Kowalkem2@@tcp(localhost)/hackernews")
 	if err != nil {
 		log.Panic(err)
 	}

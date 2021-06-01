@@ -6,42 +6,84 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strconv"
 
+	"github.com/mateuszkowalke/hackernews/auth"
 	"github.com/mateuszkowalke/hackernews/graph/generated"
 	"github.com/mateuszkowalke/hackernews/graph/model"
+	"github.com/mateuszkowalke/hackernews/jwt"
+	"github.com/mateuszkowalke/hackernews/links"
+	"github.com/mateuszkowalke/hackernews/users"
 )
 
 func (r *mutationResolver) CreateLink(ctx context.Context, input model.NewLink) (*model.Link, error) {
-	var link model.Link
-	var user model.User
+	user := auth.GetUserFromContext(ctx)
+	if user == nil {
+		return &model.Link{}, fmt.Errorf("access denied")
+	}
+	var link links.Link
 	link.Address = input.Address
 	link.Title = input.Title
-	user.Name = "test user"
-	link.User = &user
-	return &link, nil
+	link.User = user
+	linkID := link.Save()
+	graphqlUser := &model.User{
+		ID:   user.ID,
+		Name: user.Username,
+	}
+	return &model.Link{ID: strconv.FormatInt(linkID, 10), Title: link.Title, Address: link.Address, User: graphqlUser}, nil
 }
 
 func (r *mutationResolver) CreateUser(ctx context.Context, input model.NewUser) (string, error) {
-	panic(fmt.Errorf("not implemented"))
+	var user users.User
+	user.Username = input.Username
+	user.Password = input.Password
+	user.Create()
+	token, err := jwt.GenerateToken(user.Username)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func (r *mutationResolver) Login(ctx context.Context, input model.Login) (string, error) {
-	panic(fmt.Errorf("not implemented"))
+	var user users.User
+	user.Username = input.Username
+	user.Password = input.Password
+	correct := user.Authenticate()
+	if !correct {
+		return "", &users.WrongUsernameOrPasswordError{}
+	}
+	token, err := jwt.GenerateToken(user.Username)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func (r *mutationResolver) RefreshToken(ctx context.Context, input model.RefreshTokenInput) (string, error) {
-	panic(fmt.Errorf("not implemented"))
+	username, err := jwt.ParseToken(input.Token)
+	if err != nil {
+		return "", err
+	}
+	token, err := jwt.GenerateToken(username)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func (r *queryResolver) Links(ctx context.Context) ([]*model.Link, error) {
-	var links []*model.Link
-	dummyLink := model.Link{
-		Title:   "our dummy link",
-		Address: "https://address.org",
-		User:    &model.User{Name: "admin"},
+	var resultLinks []*model.Link
+	var dbLinks []links.Link
+	dbLinks = links.GetAll()
+	for _, link := range dbLinks {
+		graphqlUser := &model.User{
+			ID:   link.User.ID,
+			Name: link.User.Username,
+		}
+		resultLinks = append(resultLinks, &model.Link{ID: link.ID, Title: link.Title, Address: link.Address, User: graphqlUser})
 	}
-	links = append(links, &dummyLink)
-	return links, nil
+	return resultLinks, nil
 }
 
 // Mutation returns generated.MutationResolver implementation.
